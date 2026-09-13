@@ -4,14 +4,14 @@ Controle infravermelho substituto para um ar-condicionado Elgin Inverter cujo co
 original quebrou. Feito com uma **Wemos D1 R32 (ESP32)**, o **LED infravermelho resgatado
 do controle original** e um display **OLED SSD1306**.
 
-O sketch final é [`control/control.ino`](control/control.ino): liga/desliga e ajuste de
-temperatura pelo teclado, no Serial Monitor.
+O sketch final é [`control/control.ino`](control/control.ino): dois botões físicos para a
+temperatura, e o teclado do Serial Monitor para tudo.
 
-| Tecla | Ação |
+| Comando | Ação |
 |---|---|
-| `P` | liga / desliga |
-| `A` | aumenta 1 °C |
-| `D` | diminui 1 °C |
+| Botão em `IO25` **ou** tecla `A` | aumenta 1 °C |
+| Botão em `IO17` **ou** tecla `D` | diminui 1 °C |
+| Tecla `P` | liga / desliga |
 
 **Protocolo: `ELECTRA_AC`** — o Elgin Inverter 9000 responde ao protocolo da Electra
 (a Elgin reetiqueta essa plataforma). Descoberto por tentativa, já que não havia receptor
@@ -27,6 +27,7 @@ IR para capturar os códigos do controle original.
 | LED IR 940 nm | dessoldado do controle original |
 | Resistor 220 Ω | limita a corrente do LED |
 | OLED 0.96" SSD1306 I2C | mostra o estado atual (opcional) |
+| 2 botões táteis (push-button) | aumentar e diminuir temperatura |
 | Protoboard e jumpers | |
 
 ## Montagem
@@ -39,9 +40,13 @@ IR para capturar os códigos do controle original.
 │  3V3          ─────┼───────────────────────► trilha (+) ──► OLED VCC
 │  GND          ─────┼───────────────────────► trilha (−) ──► OLED GND
 │                    │                              ▲
-│  IO26 (GPIO26)─────┼──[ 220Ω ]──►|────────────────┘
-└────────────────────┘            LED IR
-                        anodo (perna longa) ┘ └ catodo (perna curta) no GND
+│  IO26 (GPIO26)─────┼──[ 220Ω ]──►|────────────────┤
+│                    │            LED IR            │
+│                    │                              │
+│  IO25 (GPIO25)─────┼────o  o──────────────────────┤   botao AUMENTAR
+│                    │                              │
+│  IO17 (GPIO17)─────┼────o  o──────────────────────┘   botao DIMINUIR
+└────────────────────┘                       trilha (−) = GND
 ```
 
 | Componente | Perna | Pino da D1 R32 |
@@ -52,6 +57,17 @@ IR para capturar os códigos do controle original.
 | OLED | SCL | **SCL** (GPIO22) |
 | Resistor 220 Ω | — | `IO26` → anodo do LED |
 | LED IR | catodo | `GND` |
+| Botão aumentar | um lado | `IO25` |
+| Botão aumentar | outro lado | `GND` |
+| Botão diminuir | um lado | `IO17` |
+| Botão diminuir | outro lado | `GND` |
+
+**Os botões não precisam de resistor.** O firmware liga o *pull-up interno* do ESP32
+(`INPUT_PULLUP`): em repouso o pino fica em 3,3 V, e apertar o botão o puxa para o GND.
+São só dois fios por botão.
+
+> Botão tátil de 4 pernas: os pinos são ligados **aos pares**. Se ao espetar na protoboard
+> ele parecer sempre pressionado, gire-o 90°.
 
 **Cuidados**
 
@@ -107,12 +123,15 @@ funcionar melhor (filtro IR mais fraco).
 
 ### Fase 2 — O controle (`control/control.ino`)
 
-Grave o sketch, abra o Serial Monitor a **115200 baud** e use `P`, `A` e `D`.
-Cada tecla faz o aparelho **apitar** — esse apito é a confirmação de que o comando chegou.
+Grave o sketch e abra o Serial Monitor a **115200 baud**. A temperatura pode ser ajustada
+pelos **botões físicos** ou pelas teclas `A` e `D`; liga/desliga é só pela tecla `P`.
+
+Cada comando faz o aparelho **apitar** — esse apito é a confirmação de que chegou.
 
 ```
 === Controle Elgin (ELECTRA_AC) ===
 P = liga/desliga | A = aumentar | D = diminuir
+Botoes fisicos: aumentar e diminuir
 OLED: ok
 Estado inicial: DESLIGADO, 24 C
 
@@ -126,6 +145,10 @@ detectado, o sketch avisa no boot e segue funcionando normalmente só pelo Seria
 
 Deixe a caixa de envio do Serial Monitor em **"Sem final de linha"**. Nas outras opções a
 IDE manda um `\n` junto, mas o sketch ignora qualquer caractere que não seja P, A ou D.
+
+Os botões são lidos a cada 30 ms e só disparam na **borda** do aperto — segurar apertado
+manda um comando só, não uma rajada. Se um botão parecer disparar sozinho, provavelmente
+está com mau contato na protoboard.
 
 Fixos no código: modo **COOL** e ventilador **automático** — para mudar, ajuste
 `ac.next.mode` e `ac.next.fanspeed` dentro de `enviar()`.

@@ -8,11 +8,16 @@
  *   A   aumenta a temperatura
  *   D   diminui a temperatura
  *
+ * BOTÕES FÍSICOS: dois botões fazem o mesmo que A e D.
+ * Liga/desliga continua só pela tecla P.
+ *
  * Placa: WEMOS D1 R32 (ESP32)
  * Bibliotecas: IRremoteESP8266, Adafruit SSD1306, Adafruit GFX
  *
  * Ligação: GPIO26 -> resistor 220R -> anodo do LED IR; catodo -> GND
  *          OLED: VCC 3V3, GND, SDA GPIO21, SCL GPIO22
+ *          Botao aumentar: GPIO25 -> GND
+ *          Botao diminuir: GPIO17 -> GND
  */
 
 #include <IRremoteESP8266.h>
@@ -25,6 +30,8 @@
 const uint16_t PINO_LED_IR = 26;
 const int PINO_SDA = 21;
 const int PINO_SCL = 22;
+const int PINO_BTN_MAIS = 25;
+const int PINO_BTN_MENOS = 17;
 const uint8_t ENDERECO_OLED = 0x3C;
 const int TEMP_MIN = 16;
 const int TEMP_MAX = 32;
@@ -35,6 +42,19 @@ bool temDisplay = false;
 
 bool ligado = false;
 int temperatura = 24;
+
+// Botões ligados entre o GPIO e o GND, usando o pull-up interno: em repouso
+// o pino lê HIGH, pressionado lê LOW. Não precisa de resistor externo.
+// A struct precisa ficar aqui no topo: a IDE gera os protótipos das funções
+// no início do arquivo, e clicou() não compila se o tipo ainda não existir.
+struct Botao {
+  int pino;
+  bool pressionadoAntes;
+  uint32_t ultimaLeitura;
+};
+
+Botao btnMais  = {PINO_BTN_MAIS, false, 0};
+Botao btnMenos = {PINO_BTN_MENOS, false, 0};
 
 // Se o OLED não for encontrado, tudo aqui vira no-op e o controle segue
 // funcionando normalmente pelo Serial.
@@ -110,9 +130,25 @@ void mudarTemperatura(int passo) {
   enviar();
 }
 
+// Retorna true uma única vez, no instante em que o botão é apertado.
+// Ler só a cada 30 ms já elimina o repique mecânico dos contatos.
+bool clicou(Botao& b) {
+  if (millis() - b.ultimaLeitura < 30) return false;
+  b.ultimaLeitura = millis();
+
+  bool pressionado = (digitalRead(b.pino) == LOW);
+  bool acabouDeApertar = pressionado && !b.pressionadoAntes;
+  b.pressionadoAntes = pressionado;
+
+  return acabouDeApertar;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  pinMode(PINO_BTN_MAIS, INPUT_PULLUP);
+  pinMode(PINO_BTN_MENOS, INPUT_PULLUP);
 
   Wire.begin(PINO_SDA, PINO_SCL);
   temDisplay = display.begin(SSD1306_SWITCHCAPVCC, ENDERECO_OLED);
@@ -120,6 +156,7 @@ void setup() {
   Serial.println();
   Serial.println("=== Controle Elgin (ELECTRA_AC) ===");
   Serial.println("P = liga/desliga | A = aumentar | D = diminuir");
+  Serial.println("Botoes fisicos: aumentar e diminuir");
   Serial.printf("OLED: %s\n", temDisplay ? "ok" : "nao encontrado (segue sem ele)");
   Serial.printf("Estado inicial: DESLIGADO, %d C\n\n", temperatura);
 
@@ -127,6 +164,9 @@ void setup() {
 }
 
 void loop() {
+  if (clicou(btnMais))  mudarTemperatura(+1);
+  if (clicou(btnMenos)) mudarTemperatura(-1);
+
   if (!Serial.available()) return;
 
   char c = Serial.read();
