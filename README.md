@@ -9,9 +9,9 @@ temperatura, e o teclado do Serial Monitor para tudo.
 
 | Comando | Ação |
 |---|---|
-| Botão em `IO25` **ou** tecla `A` | aumenta 1 °C |
-| Botão em `IO17` **ou** tecla `D` | diminui 1 °C |
-| Tecla `P` | liga / desliga |
+| Botão `IO25` **ou** tecla `A` | aumenta 1 °C |
+| Botão `IO17` **ou** tecla `D` | diminui 1 °C |
+| **Os dois botões juntos** **ou** tecla `P` | liga / desliga |
 
 **Protocolo: `ELECTRA_AC`** — o Elgin Inverter 9000 responde ao protocolo da Electra
 (a Elgin reetiqueta essa plataforma). Descoberto por tentativa, já que não havia receptor
@@ -123,15 +123,18 @@ funcionar melhor (filtro IR mais fraco).
 
 ### Fase 2 — O controle (`control/control.ino`)
 
-Grave o sketch e abra o Serial Monitor a **115200 baud**. A temperatura pode ser ajustada
-pelos **botões físicos** ou pelas teclas `A` e `D`; liga/desliga é só pela tecla `P`.
+Grave o sketch e abra o Serial Monitor a **115200 baud**. Tudo pode ser feito pelos
+**botões físicos** ou pelas teclas `P`, `A` e `D` — os dois caminhos são equivalentes.
+
+**Liga/desliga é apertar os dois botões ao mesmo tempo.** São só dois botões: um sozinho
+mexe na temperatura, os dois juntos ligam ou desligam.
 
 Cada comando faz o aparelho **apitar** — esse apito é a confirmação de que chegou.
 
 ```
 === Controle Elgin (ELECTRA_AC) ===
 P = liga/desliga | A = aumentar | D = diminuir
-Botoes fisicos: aumentar e diminuir
+Botoes: um de cada vez = temperatura | os dois = liga/desliga
 OLED: ok
 Estado inicial: DESLIGADO, 24 C
 
@@ -146,9 +149,13 @@ detectado, o sketch avisa no boot e segue funcionando normalmente só pelo Seria
 Deixe a caixa de envio do Serial Monitor em **"Sem final de linha"**. Nas outras opções a
 IDE manda um `\n` junto, mas o sketch ignora qualquer caractere que não seja P, A ou D.
 
-Os botões são lidos a cada 30 ms e só disparam na **borda** do aperto — segurar apertado
-manda um comando só, não uma rajada. Se um botão parecer disparar sozinho, provavelmente
-está com mau contato na protoboard.
+Os botões são lidos a cada 30 ms, o que já elimina o repique dos contatos. A temperatura
+muda **ao soltar** o botão, não ao apertar: como é impossível apertar os dois exatamente no
+mesmo instante, agir no aperto faria o primeiro botão mudar a temperatura antes de o segundo
+chegar e formar o combo. Segurar apertado manda um comando só, não uma rajada.
+
+Se um botão disparar sozinho, é mau contato na protoboard ou os dois fios caíram no mesmo
+par interno do botão (veja a nota sobre as 4 pernas, acima).
 
 Fixos no código: modo **COOL** e ventilador **automático** — para mudar, ajuste
 `ac.next.mode` e `ac.next.fanspeed` dentro de `enviar()`.

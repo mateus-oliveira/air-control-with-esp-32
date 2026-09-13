@@ -8,8 +8,10 @@
  *   A   aumenta a temperatura
  *   D   diminui a temperatura
  *
- * BOTÕES FÍSICOS: dois botões fazem o mesmo que A e D.
- * Liga/desliga continua só pela tecla P.
+ * BOTÕES FÍSICOS (dois):
+ *   botao de cima sozinho    aumenta a temperatura
+ *   botao de baixo sozinho   diminui a temperatura
+ *   os dois ao mesmo tempo   liga / desliga
  *
  * Placa: WEMOS D1 R32 (ESP32)
  * Bibliotecas: IRremoteESP8266, Adafruit SSD1306, Adafruit GFX
@@ -45,16 +47,10 @@ int temperatura = 24;
 
 // Botões ligados entre o GPIO e o GND, usando o pull-up interno: em repouso
 // o pino lê HIGH, pressionado lê LOW. Não precisa de resistor externo.
-// A struct precisa ficar aqui no topo: a IDE gera os protótipos das funções
-// no início do arquivo, e clicou() não compila se o tipo ainda não existir.
-struct Botao {
-  int pino;
-  bool pressionadoAntes;
-  uint32_t ultimaLeitura;
-};
-
-Botao btnMais  = {PINO_BTN_MAIS, false, 0};
-Botao btnMenos = {PINO_BTN_MENOS, false, 0};
+bool maisAntes = false;
+bool menosAntes = false;
+bool comboJaDisparou = false;
+uint32_t ultimaLeitura = 0;
 
 // Se o OLED não for encontrado, tudo aqui vira no-op e o controle segue
 // funcionando normalmente pelo Serial.
@@ -130,17 +126,41 @@ void mudarTemperatura(int passo) {
   enviar();
 }
 
-// Retorna true uma única vez, no instante em que o botão é apertado.
-// Ler só a cada 30 ms já elimina o repique mecânico dos contatos.
-bool clicou(Botao& b) {
-  if (millis() - b.ultimaLeitura < 30) return false;
-  b.ultimaLeitura = millis();
+/*
+ * Lê os dois botões. Um sozinho muda a temperatura; os dois juntos ligam ou
+ * desligam o aparelho.
+ *
+ * A temperatura age ao SOLTAR o botão, não ao apertar: como é impossível
+ * apertar os dois exatamente no mesmo instante, agir no aperto faria o
+ * primeiro botão mudar a temperatura antes de o segundo chegar.
+ *
+ * Ler só a cada 30 ms já elimina o repique mecânico dos contatos.
+ */
+void lerBotoes() {
+  if (millis() - ultimaLeitura < 30) return;
+  ultimaLeitura = millis();
 
-  bool pressionado = (digitalRead(b.pino) == LOW);
-  bool acabouDeApertar = pressionado && !b.pressionadoAntes;
-  b.pressionadoAntes = pressionado;
+  bool mais = (digitalRead(PINO_BTN_MAIS) == LOW);
+  bool menos = (digitalRead(PINO_BTN_MENOS) == LOW);
 
-  return acabouDeApertar;
+  // Os dois apertados: liga/desliga, uma vez só por combo.
+  if (mais && menos && !comboJaDisparou) {
+    comboJaDisparou = true;
+    ligado = !ligado;
+    enviar();
+  }
+
+  // Soltou: só vale se este aperto não fez parte de um combo.
+  if (maisAntes && !mais && !comboJaDisparou)   mudarTemperatura(+1);
+  if (menosAntes && !menos && !comboJaDisparou) mudarTemperatura(-1);
+
+  // Libera o próximo combo só depois que os dois estiverem soltos. Precisa
+  // vir depois dos testes acima, senão o segundo botão a ser solto escaparia
+  // e mudaria a temperatura.
+  if (!mais && !menos) comboJaDisparou = false;
+
+  maisAntes = mais;
+  menosAntes = menos;
 }
 
 void setup() {
@@ -156,7 +176,7 @@ void setup() {
   Serial.println();
   Serial.println("=== Controle Elgin (ELECTRA_AC) ===");
   Serial.println("P = liga/desliga | A = aumentar | D = diminuir");
-  Serial.println("Botoes fisicos: aumentar e diminuir");
+  Serial.println("Botoes: um de cada vez = temperatura | os dois = liga/desliga");
   Serial.printf("OLED: %s\n", temDisplay ? "ok" : "nao encontrado (segue sem ele)");
   Serial.printf("Estado inicial: DESLIGADO, %d C\n\n", temperatura);
 
@@ -164,8 +184,7 @@ void setup() {
 }
 
 void loop() {
-  if (clicou(btnMais))  mudarTemperatura(+1);
-  if (clicou(btnMenos)) mudarTemperatura(-1);
+  lerBotoes();
 
   if (!Serial.available()) return;
 
