@@ -203,3 +203,287 @@ outro meio, os dois ficam dessincronizados; basta apertar `P` duas vezes para re
 
 O estado também não é salvo: ao reiniciar a placa, o controle volta a achar que o aparelho
 está desligado a 24 °C, com ventilador baixo, visor ligado e oscilação desligada.
+
+---
+
+# Versão BitDogLab (Raspberry Pi Pico W)
+
+Sketch: [`raspiberrypi/raspiberrypi.ino`](raspiberrypi/raspiberrypi.ino).
+
+Mesmo controle, mesmos comandos, mesmo protocolo — rodando na **BitDogLab** da
+Embarcatech. A diferença que importa: a BitDogLab já traz os **dois botões**, o
+**OLED** e uma **bateria**, então o controle deixa de depender da protoboard e do PC.
+Só o LED IR é fio solto.
+
+Os dois sketches convivem no repositório e são equivalentes: `control/` é a Wemos D1 R32,
+`raspiberrypi/` é a BitDogLab.
+
+## O que muda no hardware
+
+| Peça | Wemos D1 R32 (ESP32) | BitDogLab (Pico W) |
+|---|---|---|
+| Botão aumentar | `IO25` (na protoboard) | **Botão B**, o da direita = `GP6` (já na placa) |
+| Botão diminuir | `IO17` (na protoboard) | **Botão A**, o da esquerda = `GP5` (já na placa) |
+| OLED SDA / SCL | `GPIO21` / `GPIO22` (I2C0) | `GP14` / `GP15` (**I2C1**) |
+| LED IR | `GPIO26` | `GP17` |
+| Alimentação | USB do PC | bateria da placa |
+| Botão velocidade | não existia | `GP16` (na protoboard) |
+| Botão oscilação | não existia | `GP19` (na protoboard) |
+
+As duas últimas linhas são **novas**, não têm equivalente na Wemos: os dois botões que lá
+faziam temperatura e liga/desliga foram reaproveitados aqui para outra coisa, já que a
+BitDogLab traz os seus próprios. Com quatro botões, o controle deixa de depender do teclado
+para tudo menos o visor.
+
+Os botões continuam sem resistor: na BitDogLab eles já estão ligados entre o GPIO e o GND,
+exatamente o arranjo que o `INPUT_PULLUP` do firmware espera.
+
+**O OLED da BitDogLab está no I2C1, não no I2C0.** Por isso o sketch usa `Wire1` e chama
+`setSDA`/`setSCL` **antes** do `begin()` — no core do Pico, remapear os pinos depois do
+`begin()` não faz efeito, e o display simplesmente não aparece.
+
+## Ligação do LED e dos botões externos
+
+O OLED e os botões A/B já vêm soldados; só isto vai na protoboard:
+
+```
+   BitDogLab (Pico W)                      Protoboard
+┌────────────────────┐
+│  GP17         ─────┼──[ 220Ω ]──►|───────────────┐
+│                    │            LED IR           │
+│                    │                             │
+│  GP16         ─────┼────o  o─────────────────────┤   botao VELOCIDADE
+│                    │                             │
+│  GP19         ─────┼────o  o─────────────────────┤   botao OSCILACAO
+│                    │                             │
+│  GND          ─────┼─────────────────────────────┘
+└────────────────────┘
+```
+
+Os botões externos seguem a mesma regra dos da Wemos: **dois fios cada, sem resistor**. O
+firmware liga o pull-up interno (`INPUT_PULLUP`), então em repouso o pino fica em 3,3 V e
+apertar puxa para o GND. Vale também a mesma nota sobre botão tátil de 4 pernas — se parecer
+sempre pressionado, gire 90°.
+
+Vale a mesma conta de corrente da versão ESP32 (o Pico também é 3,3 V), e o mesmo aviso:
+**nunca ligue o LED direto no pino**, sempre com resistor.
+
+### Por que GP17
+
+Não é um pino qualquer: o RP2040 tem **8 slices de PWM**, cada um com dois canais, e os
+dois canais de um slice **compartilham a mesma frequência**. Como a portadora do IR fixa o
+slice em 38 kHz, todo periférico que caia no mesmo slice fica refém dessa frequência.
+
+| Pino | Slice | Divide o slice com |
+|---|---|---|
+| `GP28` | 6 | LED RGB azul (`GP12`), LED RGB vermelho (`GP13`) |
+| `GP20` | 2 | **Buzzer A** (`GP21`), Botão A (`GP5`) |
+| **`GP16` / `GP17`** | 0 | só `GP0` e `GP1` — nada da placa usa como PWM |
+| **`GP18` / `GP19`** | 1 | só `GP2` e `GP3` — idem |
+
+O `GP28` seria a escolha ruim por dois motivos: é a entrada do **microfone** (ADC2, ligada à
+saída de um amplificador, que o LED passaria a disputar) e trava o slice do LED RGB em
+38 kHz. O `GP20` tem o mesmo defeito em relação ao **buzzer** — justamente o que se usaria
+para dar um bip de confirmação num controle sem PC.
+
+`GP16` a `GP19` caem nos slices 0 e 1, que não encostam em nada da BitDogLab, e são
+intercambiáveis entre si. Para trocar, basta mudar `PINO_LED_IR` no topo do sketch.
+
+> Confira no esquemático da sua revisão de placa quais pinos o conector IDC expõe
+> fisicamente — o mapa de slices acima vale para o RP2040, mas o que está disponível no
+> conector depende da placa.
+
+## Ambiente
+
+1. **Arduino IDE** → *Preferências* → *URLs adicionais de gerenciadores de placas*:
+   `https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json`
+
+   O campo é uma linha só, mas aceita **vários URLs separados por vírgula** — a do ESP32
+   continua valendo, é só acrescentar a nova depois de uma vírgula. Se preferir, o ícone
+   pequeno na ponta direita do campo abre um diálogo com **uma URL por linha**.
+2. *Ferramentas → Placa → Gerenciador de Placas* → procure por `pico` e instale
+   **Raspberry Pi Pico/RP2040/RP2350**, de *Earle F. Philhower, III*. São ~500 MB, demora.
+
+   > **Cuidado: há dois cores para o Pico, e só um serve.** Procurando por `pico` também
+   > aparece o **Arduino Mbed OS RP2040 Boards**, da própria Arduino — esse vem no índice
+   > padrão, então instala sem precisar de URL nenhuma, e é a armadilha. O Mbed **não tem**
+   > `Serial.printf`, `analogWriteFreq`, `analogWriteRange` nem `Wire1`, e sem
+   > `analogWriteFreq` não existe portadora de 38 kHz. Não é questão de ajustar o código:
+   > o sketch depende dessas quatro coisas.
+   >
+   > Se o erro vier com `'class arduino::UART' has no member named 'printf'` ou
+   > `'Wire1' was not declared in this scope`, é o core Mbed que está selecionado.
+   > O nome `arduino::UART` é a assinatura dele.
+
+3. *Ferramentas → Placa* → o submenu certo chama-se **Raspberry Pi Pico/RP2040/RP2350**
+   (o errado chama-se *Arduino Mbed OS RP2040 Boards*). Dentro dele escolha
+   **Raspberry Pi Pico W** — a BitDogLab usa o Pico **W**.
+
+   Os dois cores convivem sem problema; o que decide é qual submenu você escolhe. Se quiser
+   tirar a tentação do caminho, desinstale o Mbed pelo mesmo Gerenciador de Placas.
+4. *Ferramentas → Gerenciar Bibliotecas* → instale **Adafruit SSD1306** e
+   **Adafruit GFX Library**. As mesmas do ESP32 — se já instalou antes, nada a fazer.
+   **Não** instale a `IRremoteESP8266` para esta placa; veja a seção seguinte.
+5. Serial Monitor em **115200 baud**.
+
+### Gravando: o modo de gravação (BOOTSEL)
+
+Para gravar, o RP2040 precisa estar em **modo de gravação** — nele o USB deixa de ser porta
+serial e vira um pendrive chamado **RPI-RP2**, e a IDE escreve o `.uf2` direto nesse volume.
+A IDE tenta entrar nesse modo sozinha, e quando consegue é só clicar em *Carregar*.
+
+Quando ela **não** consegue, o erro é sempre este:
+
+```
+Resetting /dev/cu.usbmodem21301
+Scanning for RP2040 devices
+No drive to deploy.
+Failed uploading: uploading error: exit status 1
+```
+
+Traduzindo: ela mandou a placa reiniciar em modo de gravação, a placa não foi, e não havia
+volume para escrever.
+
+**O jeito que funciona — energizar com o BOOTSEL apertado:**
+
+1. **Desplugue o cabo USB.**
+2. Segure o **BOOTSEL** — o único botão do módulo do Pico, colado no micro-USB *dele*.
+   Não é o Botão A, nem o B, nem o RESET da BitDogLab.
+3. **Plugue o USB** com o botão ainda apertado.
+4. Conte até três e solte. O volume **RPI-RP2** monta.
+5. Clique em *Carregar*. O volume fica montado indefinidamente, não há pressa.
+
+A variante mais divulgada — segurar BOOTSEL, apertar e soltar RESET, soltar BOOTSEL — **é
+mais frágil**, e aqui falhou várias vezes seguidas. O RP2040 lê o BOOTSEL no instante exato
+em que sai do reset, então soltar o botão cedo demais faz o chip acordar em modo normal. Na
+energização essa janela não existe: o botão já está pressionado quando o chip liga.
+
+**Como saber se é técnica ou defeito.** O sintoma de BOOTSEL que não pega é a porta serial
+sumir e voltar (o RESET funcionou), sem nenhum disco aparecer. Se quiser descartar cabo ruim
+ou placa reiniciando sozinha, observe a porta com a placa **em repouso**, sem tocar nela:
+
+```sh
+for i in $(seq 1 30); do
+  ls /dev/cu.usbmodem* >/dev/null 2>&1 && echo "[${i}s] porta" || echo "[${i}s] SUMIU"
+  sleep 1
+done
+```
+
+Trinta linhas iguais = placa estável, e o problema é só a janela do BOOTSEL. Se ela oscilar
+sozinha, aí sim o assunto é alimentação, cabo ou firmware.
+
+**Como saber que gravou**, sem depender da mensagem da IDE: o volume `RPI-RP2` desmonta
+sozinho e a porta serial volta poucos segundos depois. Volume não desmonta por conta
+própria — se desmontou, é porque alguém escreveu nele.
+
+**Feche o Serial Monitor antes de gravar.** Ele segura a porta (`lsof /dev/cu.usbmodem*`
+mostra o processo `serial-mo`), e o reset automático da IDE depende de abrir e fechar essa
+porta a 1200 bps. A IDE 2.x costuma fechar o monitor sozinha, mas com o Pico no macOS ela
+escorrega.
+
+**Plano B: arrastar o `.uf2` no Finder.** Em *Sketch → Exportar binário compilado*, a IDE
+grava o `.uf2` em `raspiberrypi/build/`. Com o `RPI-RP2` montado, arraste o arquivo para o
+volume. É o mesmo que a IDE faz, com a vantagem de não ter pressa — o
+`Scanning for RP2040 devices` dela tem uma janela curta e desiste rápido.
+
+## Passo a passo
+
+### Fase 1 — Testes de sanidade (`tests/raspiberrypi/`)
+
+São testes próprios da BitDogLab — os de `tests/` na raiz são da Wemos e usam outros pinos.
+
+| Sketch | O que prova | Resultado esperado |
+|---|---|---|
+| `ir_led_blink` | o LED e o PWM de 38 kHz | pisca 3 s, depois fica aceso mais fraco 3 s |
+| `oled_hello` | o display no I2C1 | texto + contador na tela |
+
+O `ir_led_blink` alterna dois modos de propósito. No **pisca lento** o LED liga em nível
+contínuo — é o teste da fiação. Na **portadora de 38 kHz** ele liga e desliga 38 mil vezes
+por segundo: o LED amarelo fica **aceso, porém nitidamente mais fraco** que no pisca, porque
+passa metade do tempo apagado. Essa queda de brilho é a prova de que o PWM subiu certo.
+Se o LED apagar de vez ou o brilho não mudar nada entre os dois modos, o problema está no PWM.
+
+Quando trocar o amarelo pelo LED IR, o teste é o mesmo, só que olhando pela **câmera do
+celular** — vale toda a explicação da versão ESP32 acima.
+
+### Fase 2 — O controle (`raspiberrypi/raspiberrypi.ino`)
+
+São **quatro** botões, e o teclado do Serial Monitor continua fazendo tudo
+(`P A D V O SL SM SF`).
+
+| Botão | Onde | Ação |
+|---|---|---|
+| **B** — o da **direita** | na placa | aumenta 1 °C |
+| **A** — o da **esquerda** | na placa | diminui 1 °C |
+| **A + B juntos** | na placa | liga / desliga |
+| `GP16` | protoboard | velocidade em ciclo: `low → med → fast → low` |
+| `GP19` | protoboard | liga / desliga a oscilação |
+
+Os dois da placa mantêm a lógica da Wemos — agir ao soltar, 30 ms de anti-repique, o combo
+que só dispara uma vez — explicada na seção dela.
+
+Os dois externos são diferentes de propósito: **agem no aperto, não ao soltar**. Aquela
+lógica de agir ao soltar existe só por causa do combo, e como estes não formam combo com
+ninguém, esperar o dedo sair só atrasaria a resposta. É o flanco que dispara, então segurar
+o botão manda um comando só, não uma rajada.
+
+O **visor é o único comando que sobrou exclusivo do teclado** (tecla `V`), e a razão está na
+última seção: nesse protocolo ele é um *toggle*, não um estado.
+
+O OLED agora mostra tudo que tem botão:
+
+```
+LIGADO
+────────────────────
+    24 C
+────────────────────
+VEL MED      OSC ON
+```
+
+Sem esse rodapé os dois botões novos não dariam retorno nenhum com a placa fora do PC — que
+é exatamente a situação para a qual eles existem.
+
+Gravado o sketch, desplugue o USB e ligue a bateria: daí em diante é um controle remoto de
+verdade, e só o visor pede o PC.
+
+---
+
+## Por que o código IR é diferente nas duas placas
+
+A `IRremoteESP8266` **não compila no RP2040** — apesar de rodar em ESP32 apesar do nome, ela
+depende dos periféricos da Espressif. Não existe equivalente dela para Pico com suporte a
+protocolos de ar-condicionado: as bibliotecas de IR do RP2040 tratam de controles simples
+("um código por botão"), e Inverter não é assim.
+
+Então o `ELECTRA_AC` foi **reimplementado à mão** dentro do sketch, em cerca de 60 linhas,
+divididas em duas camadas:
+
+- **A portadora de 38 kHz** sai do PWM por hardware do RP2040 (`analogWriteFreq(38000)`).
+  "Marca" é o PWM ligado a 50% de duty, "espaço" é o pino em nível baixo.
+- **O quadro de 13 bytes** é montado campo a campo (temperatura com offset 8, modo,
+  ventilador, oscilação, liga/desliga, visor) e fechado com o checksum, que é só a soma
+  dos 12 bytes anteriores truncada em 8 bits.
+
+Os valores não foram deduzidos nem adivinhados: saíram do `ir_Electra.cpp` da própria
+IRremoteESP8266 2.9.0, a mesma versão que roda no ESP32. Os dois caminhos foram comparados
+byte a byte em **todas as 408 combinações** de liga/desliga × 17 temperaturas × 3
+velocidades × oscilação × visor, e o quadro transmitido é idêntico. Ou seja: o aparelho não
+tem como notar a diferença entre as duas placas.
+
+**Interrupções ficam ligadas durante a transmissão.** O quadro inteiro dura ~195 ms e
+desligá-las por todo esse tempo derrubaria o USB. Não é preciso: as esperas são medidas
+contra o relógio absoluto (`micros()`, que no RP2040 vem de um timer de hardware), e não por
+contagem de ciclos. Se uma interrupção roubar alguns microssegundos no meio de um pulso, a
+espera seguinte termina no mesmo instante que terminaria de qualquer forma — o erro não
+acumula, e receptores IR toleram folga muito maior que isso.
+
+### Uma pegadinha do protocolo: o visor é *toggle*
+
+No `ELECTRA_AC` o campo do visor não é um estado ("ligado"/"desligado"), é um **toggle**:
+o aparelho inverte o visor toda vez que recebe um quadro com esse campo em `0x15`. Como o
+firmware manda o estado inteiro a cada comando, com `visor` começando em `true`, **qualquer**
+comando (mudar temperatura, ligar, trocar velocidade) também alterna o visor do aparelho.
+
+Isso vem da versão ESP32 e foi mantido igual de propósito, para as duas placas se comportarem
+do mesmo jeito. Se incomodar, o conserto é mandar `0x15` só no comando `V` e `0x08` em todos
+os outros — ou seja, tratar `visor` como um pulso, não como um estado.
