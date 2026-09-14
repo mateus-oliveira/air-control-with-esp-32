@@ -7,6 +7,11 @@
  *   P   liga / desliga
  *   A   aumenta a temperatura
  *   D   diminui a temperatura
+ *   V   liga / desliga o visor do ar
+ *   O   liga / desliga a oscilacao das aletas
+ *   SL  velocidade baixa do ventilador
+ *   SM  velocidade media do ventilador
+ *   SF  velocidade alta do ventilador
  *
  * BOTÕES FÍSICOS (dois):
  *   botao de cima sozinho    aumenta a temperatura
@@ -43,7 +48,15 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 bool temDisplay = false;
 
 bool ligado = false;
+bool visor = true;
+bool oscilando = false;
 int temperatura = 24;
+stdAc::fanspeed_t velocidade = stdAc::fanspeed_t::kLow;
+
+// O comando de velocidade tem duas letras ("sl", "sm", "sf"). Ao receber o 's'
+// guardamos que a proxima letra completa o comando; ela costuma chegar na
+// volta seguinte do loop.
+bool aguardandoVelocidade = false;
 
 // Botões ligados entre o GPIO e o GND, usando o pull-up interno: em repouso
 // o pino lê HIGH, pressionado lê LOW. Não precisa de resistor externo.
@@ -82,6 +95,15 @@ void atualizarTela() {
   display.display();
 }
 
+const char* nomeVelocidade() {
+  switch (velocidade) {
+    case stdAc::fanspeed_t::kLow:    return "low";
+    case stdAc::fanspeed_t::kMedium: return "medium";
+    case stdAc::fanspeed_t::kHigh:   return "fast";
+    default:                         return "?";
+  }
+}
+
 // Ar Inverter não tem "código por botão": cada comando transmite o estado
 // inteiro do aparelho, com checksum. A IRac monta esse quadro para nós.
 void enviar() {
@@ -91,10 +113,10 @@ void enviar() {
   ac.next.mode = stdAc::opmode_t::kCool;
   ac.next.celsius = true;
   ac.next.degrees = temperatura;
-  ac.next.fanspeed = stdAc::fanspeed_t::kAuto;
-  ac.next.swingv = stdAc::swingv_t::kOff;
+  ac.next.fanspeed = velocidade;
+  ac.next.swingv = oscilando ? stdAc::swingv_t::kAuto : stdAc::swingv_t::kOff;
   ac.next.swingh = stdAc::swingh_t::kOff;
-  ac.next.light = true;
+  ac.next.light = visor;
   ac.next.beep = true;
   ac.next.econo = false;
   ac.next.filter = false;
@@ -108,7 +130,9 @@ void enviar() {
   atualizarTela();
 
   if (ligado) {
-    Serial.printf("LIGADO  %d C\n", temperatura);
+    Serial.printf("LIGADO  %d C  visor %s  vel %s  oscilar %s\n", temperatura,
+                  visor ? "on" : "off", nomeVelocidade(),
+                  oscilando ? "on" : "off");
   } else {
     Serial.println("DESLIGADO");
   }
@@ -123,6 +147,11 @@ void mudarTemperatura(int passo) {
   }
 
   temperatura = nova;
+  enviar();
+}
+
+void mudarVelocidade(stdAc::fanspeed_t nova) {
+  velocidade = nova;
   enviar();
 }
 
@@ -176,9 +205,12 @@ void setup() {
   Serial.println();
   Serial.println("=== Controle Elgin (ELECTRA_AC) ===");
   Serial.println("P = liga/desliga | A = aumentar | D = diminuir");
+  Serial.println("V = visor | O = oscilar");
+  Serial.println("SL / SM / SF = velocidade baixa / media / alta");
   Serial.println("Botoes: um de cada vez = temperatura | os dois = liga/desliga");
   Serial.printf("OLED: %s\n", temDisplay ? "ok" : "nao encontrado (segue sem ele)");
-  Serial.printf("Estado inicial: DESLIGADO, %d C\n\n", temperatura);
+  Serial.printf("Estado inicial: DESLIGADO, %d C, vel %s\n\n", temperatura,
+                nomeVelocidade());
 
   atualizarTela();
 }
@@ -190,7 +222,27 @@ void loop() {
 
   char c = Serial.read();
 
+  // Segunda letra de "s?": se nao for uma velocidade conhecida, o comando é
+  // descartado e a letra não cai no switch abaixo.
+  if (aguardandoVelocidade) {
+    aguardandoVelocidade = false;
+
+    switch (c) {
+      case 'l': case 'L': mudarVelocidade(stdAc::fanspeed_t::kLow);    return;
+      case 'm': case 'M': mudarVelocidade(stdAc::fanspeed_t::kMedium); return;
+      case 'f': case 'F': mudarVelocidade(stdAc::fanspeed_t::kHigh);   return;
+      default:
+        Serial.println("Velocidade invalida: use SL, SM ou SF");
+        return;
+    }
+  }
+
   switch (c) {
+    case 's':
+    case 'S':
+      aguardandoVelocidade = true;
+      break;
+
     case 'p':
     case 'P':
       ligado = !ligado;
@@ -205,6 +257,18 @@ void loop() {
     case 'd':
     case 'D':
       mudarTemperatura(-1);
+      break;
+
+    case 'v':
+    case 'V':
+      visor = !visor;
+      enviar();
+      break;
+
+    case 'o':
+    case 'O':
+      oscilando = !oscilando;
+      enviar();
       break;
   }
 }
