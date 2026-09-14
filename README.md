@@ -208,7 +208,7 @@ está desligado a 24 °C, com ventilador baixo, visor ligado e oscilação desli
 
 # Versão BitDogLab (Raspberry Pi Pico W)
 
-Sketch: [`raspiberrypi/raspiberrypi.ino`](raspiberrypi/raspiberrypi.ino).
+Sketch: [`raspberrypi/raspberrypi.ino`](raspberrypi/raspberrypi.ino).
 
 <img width="559" height="552" alt="image" src="https://github.com/user-attachments/assets/e46cf839-0ea7-41ed-9ad9-23990e8af9ad" />
 
@@ -219,7 +219,7 @@ Embarcatech. A diferença que importa: a BitDogLab já traz os **dois botões**,
 Só o LED IR é fio solto.
 
 Os dois sketches convivem no repositório e são equivalentes: `control/` é a Wemos D1 R32,
-`raspiberrypi/` é a BitDogLab.
+`raspberrypi/` é a BitDogLab.
 
 ## O que muda no hardware
 
@@ -385,13 +385,13 @@ porta a 1200 bps. A IDE 2.x costuma fechar o monitor sozinha, mas com o Pico no 
 escorrega.
 
 **Plano B: arrastar o `.uf2` no Finder.** Em *Sketch → Exportar binário compilado*, a IDE
-grava o `.uf2` em `raspiberrypi/build/`. Com o `RPI-RP2` montado, arraste o arquivo para o
+grava o `.uf2` em `raspberrypi/build/`. Com o `RPI-RP2` montado, arraste o arquivo para o
 volume. É o mesmo que a IDE faz, com a vantagem de não ter pressa — o
 `Scanning for RP2040 devices` dela tem uma janela curta e desiste rápido.
 
 ## Passo a passo
 
-### Fase 1 — Testes de sanidade (`tests/raspiberrypi/`)
+### Fase 1 — Testes de sanidade (`tests/raspberrypi/`)
 
 São testes próprios da BitDogLab — os de `tests/` na raiz são da Wemos e usam outros pinos.
 
@@ -409,7 +409,7 @@ Se o LED apagar de vez ou o brilho não mudar nada entre os dois modos, o proble
 Quando trocar o amarelo pelo LED IR, o teste é o mesmo, só que olhando pela **câmera do
 celular** — vale toda a explicação da versão ESP32 acima.
 
-### Fase 2 — O controle (`raspiberrypi/raspiberrypi.ino`)
+### Fase 2 — O controle (`raspberrypi/raspberrypi.ino`)
 
 São **quatro** botões, e o teclado do Serial Monitor continua fazendo tudo
 (`P A D V O SL SM SF`).
