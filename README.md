@@ -210,6 +210,9 @@ está desligado a 24 °C, com ventilador baixo, visor ligado e oscilação desli
 
 Sketch: [`raspiberrypi/raspiberrypi.ino`](raspiberrypi/raspiberrypi.ino).
 
+<img width="559" height="552" alt="image" src="https://github.com/user-attachments/assets/e46cf839-0ea7-41ed-9ad9-23990e8af9ad" />
+
+
 Mesmo controle, mesmos comandos, mesmo protocolo — rodando na **BitDogLab** da
 Embarcatech. A diferença que importa: a BitDogLab já traz os **dois botões**, o
 **OLED** e uma **bateria**, então o controle deixa de depender da protoboard e do PC.
