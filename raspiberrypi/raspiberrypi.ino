@@ -17,9 +17,13 @@
  *   SF  velocidade alta do ventilador
  *
  * BOTÕES DA PLACA (os dois que já vêm soldados):
- *   Botao A sozinho          aumenta a temperatura
- *   Botao B sozinho          diminui a temperatura
- *   os dois ao mesmo tempo   liga / desliga
+ *   Botao B (direita) sozinho   aumenta a temperatura
+ *   Botao A (esquerda) sozinho  diminui a temperatura
+ *   os dois ao mesmo tempo      liga / desliga
+ *
+ * BOTÕES EXTERNOS (dois, na protoboard):
+ *   GP16                     velocidade do vento, em ciclo: low > med > fast > low
+ *   GP19                     liga / desliga a oscilacao das aletas
  *
  * Placa: Raspberry Pi Pico W (core "Raspberry Pi Pico/RP2040" do Philhower)
  * Bibliotecas: Adafruit SSD1306, Adafruit GFX
@@ -29,7 +33,9 @@
  *
  * Ligação: GP17 -> resistor 220R -> anodo do LED (IR ou o amarelo de teste);
  *          catodo -> GND
- *          O OLED e os botões já estão ligados na própria placa.
+ *          Botao velocidade: GP16 -> GND
+ *          Botao oscilacao:  GP19 -> GND
+ *          O OLED e os botões A/B já estão ligados na própria placa.
  */
 
 #include <Wire.h>
@@ -46,8 +52,10 @@
 const int PINO_LED_IR = 17;
 const int PINO_SDA = 14;   // OLED da placa: barramento I2C1
 const int PINO_SCL = 15;
-const int PINO_BTN_MAIS = 5;    // Botão A
-const int PINO_BTN_MENOS = 6;   // Botão B
+const int PINO_BTN_MAIS = 6;    // Botão B da placa, o da DIREITA
+const int PINO_BTN_MENOS = 5;   // Botão A da placa, o da ESQUERDA
+const int PINO_BTN_VEL = 16;    // botão externo: velocidade do vento
+const int PINO_BTN_OSC = 19;    // botão externo: oscilação das aletas
 const uint8_t ENDERECO_OLED = 0x3C;
 const int TEMP_MIN = 16;
 const int TEMP_MAX = 32;
@@ -77,6 +85,8 @@ bool aguardandoVelocidade = false;
 bool maisAntes = false;
 bool menosAntes = false;
 bool comboJaDisparou = false;
+bool velAntes = false;
+bool oscAntes = false;
 uint32_t ultimaLeitura = 0;
 
 /* ------------------------------------------------------------------------
@@ -91,6 +101,7 @@ uint32_t ultimaLeitura = 0;
 // Definidas mais abaixo, junto da parte de interface; enviar() precisa delas.
 void atualizarTela();
 const char* nomeVelocidade();
+const char* nomeVelocidadeCurto();
 
 static inline void esperar(uint32_t us) {
   uint32_t inicio = micros();
@@ -203,17 +214,29 @@ void atualizarTela() {
 
   if (ligado) {
     display.setTextSize(4);
-    display.setCursor(18, 24);
+    display.setCursor(18, 16);
     display.print(temperatura);
 
     display.setTextSize(2);
-    display.setCursor(82, 26);
+    display.setCursor(82, 18);
     display.print("C");
   } else {
     display.setTextSize(2);
-    display.setCursor(16, 30);
+    display.setCursor(16, 22);
     display.print("-- C");
   }
+
+  // Rodapé com velocidade e oscilação. Sem ele, os dois botões externos não
+  // dariam retorno nenhum com a placa desligada do PC — e é justamente aí que
+  // o controle precisa se bastar.
+  display.drawLine(0, 50, 127, 50, SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 55);
+  display.print("VEL ");
+  display.print(nomeVelocidadeCurto());
+  display.setCursor(66, 55);
+  display.print("OSC ");
+  display.print(oscilando ? "ON" : "OFF");
 
   display.display();
 }
@@ -223,6 +246,16 @@ const char* nomeVelocidade() {
     case VEL_BAIXA: return "low";
     case VEL_MEDIA: return "medium";
     case VEL_ALTA:  return "fast";
+    default:        return "?";
+  }
+}
+
+// Versão curta, para o rodapé do OLED: "medium" não caberia ao lado do OSC.
+const char* nomeVelocidadeCurto() {
+  switch (velocidade) {
+    case VEL_BAIXA: return "LOW";
+    case VEL_MEDIA: return "MED";
+    case VEL_ALTA:  return "FAST";
     default:        return "?";
   }
 }
@@ -241,6 +274,16 @@ void mudarTemperatura(int passo) {
 
 void mudarVelocidade(uint8_t nova) {
   velocidade = nova;
+  enviar();
+}
+
+// Avança a velocidade em ciclo: low -> medium -> fast -> low.
+void proximaVelocidade() {
+  switch (velocidade) {
+    case VEL_BAIXA: velocidade = VEL_MEDIA; break;
+    case VEL_MEDIA: velocidade = VEL_ALTA;  break;
+    default:        velocidade = VEL_BAIXA; break;
+  }
   enviar();
 }
 
@@ -279,6 +322,23 @@ void lerBotoes() {
 
   maisAntes = mais;
   menosAntes = menos;
+
+  // Os dois botões externos são avulsos: não formam combo com ninguém, então
+  // agem no APERTO, não ao soltar. A lógica de agir ao soltar existe só por
+  // causa do combo dos botões da placa; aqui ela só atrasaria a resposta.
+  // Como é o flanco que dispara, segurar o botão manda um comando só.
+  bool btnVel = (digitalRead(PINO_BTN_VEL) == LOW);
+  bool btnOsc = (digitalRead(PINO_BTN_OSC) == LOW);
+
+  if (btnVel && !velAntes) proximaVelocidade();
+
+  if (btnOsc && !oscAntes) {
+    oscilando = !oscilando;
+    enviar();
+  }
+
+  velAntes = btnVel;
+  oscAntes = btnOsc;
 }
 
 void setup() {
@@ -287,6 +347,8 @@ void setup() {
 
   pinMode(PINO_BTN_MAIS, INPUT_PULLUP);
   pinMode(PINO_BTN_MENOS, INPUT_PULLUP);
+  pinMode(PINO_BTN_VEL, INPUT_PULLUP);
+  pinMode(PINO_BTN_OSC, INPUT_PULLUP);
 
   analogWriteFreq(38000);   // portadora do IR
   analogWriteRange(255);
@@ -303,7 +365,8 @@ void setup() {
   Serial.println("P = liga/desliga | A = aumentar | D = diminuir");
   Serial.println("V = visor | O = oscilar");
   Serial.println("SL / SM / SF = velocidade baixa / media / alta");
-  Serial.println("Botoes: um de cada vez = temperatura | os dois = liga/desliga");
+  Serial.println("Botoes da placa: direita = +1 C | esquerda = -1 C | os dois = liga/desliga");
+  Serial.println("Botoes externos: GP16 = velocidade | GP19 = oscilacao");
   Serial.printf("OLED: %s\n", temDisplay ? "ok" : "nao encontrado (segue sem ele)");
   Serial.printf("Estado inicial: DESLIGADO, %d C, vel %s\n\n", temperatura,
                 nomeVelocidade());

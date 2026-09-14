@@ -222,11 +222,18 @@ Os dois sketches convivem no repositório e são equivalentes: `control/` é a W
 
 | Peça | Wemos D1 R32 (ESP32) | BitDogLab (Pico W) |
 |---|---|---|
-| Botão aumentar | `IO25` (na protoboard) | **Botão A** = `GP5` (já na placa) |
-| Botão diminuir | `IO17` (na protoboard) | **Botão B** = `GP6` (já na placa) |
+| Botão aumentar | `IO25` (na protoboard) | **Botão B**, o da direita = `GP6` (já na placa) |
+| Botão diminuir | `IO17` (na protoboard) | **Botão A**, o da esquerda = `GP5` (já na placa) |
 | OLED SDA / SCL | `GPIO21` / `GPIO22` (I2C0) | `GP14` / `GP15` (**I2C1**) |
 | LED IR | `GPIO26` | `GP17` |
 | Alimentação | USB do PC | bateria da placa |
+| Botão velocidade | não existia | `GP16` (na protoboard) |
+| Botão oscilação | não existia | `GP19` (na protoboard) |
+
+As duas últimas linhas são **novas**, não têm equivalente na Wemos: os dois botões que lá
+faziam temperatura e liga/desliga foram reaproveitados aqui para outra coisa, já que a
+BitDogLab traz os seus próprios. Com quatro botões, o controle deixa de depender do teclado
+para tudo menos o visor.
 
 Os botões continuam sem resistor: na BitDogLab eles já estão ligados entre o GPIO e o GND,
 exatamente o arranjo que o `INPUT_PULLUP` do firmware espera.
@@ -235,18 +242,28 @@ exatamente o arranjo que o `INPUT_PULLUP` do firmware espera.
 `setSDA`/`setSCL` **antes** do `begin()` — no core do Pico, remapear os pinos depois do
 `begin()` não faz efeito, e o display simplesmente não aparece.
 
-## Ligação do LED
+## Ligação do LED e dos botões externos
 
-Só isso, o resto já está soldado:
+O OLED e os botões A/B já vêm soldados; só isto vai na protoboard:
 
 ```
-   BitDogLab (Pico W)
+   BitDogLab (Pico W)                      Protoboard
 ┌────────────────────┐
-│  GP17         ─────┼──[ 220Ω ]──►|──────┐
-│                    │            LED     │
-│  GND          ─────┼────────────────────┘
+│  GP17         ─────┼──[ 220Ω ]──►|───────────────┐
+│                    │            LED IR           │
+│                    │                             │
+│  GP16         ─────┼────o  o─────────────────────┤   botao VELOCIDADE
+│                    │                             │
+│  GP19         ─────┼────o  o─────────────────────┤   botao OSCILACAO
+│                    │                             │
+│  GND          ─────┼─────────────────────────────┘
 └────────────────────┘
 ```
+
+Os botões externos seguem a mesma regra dos da Wemos: **dois fios cada, sem resistor**. O
+firmware liga o pull-up interno (`INPUT_PULLUP`), então em repouso o pino fica em 3,3 V e
+apertar puxa para o GND. Vale também a mesma nota sobre botão tátil de 4 pernas — se parecer
+sempre pressionado, gire 90°.
 
 Vale a mesma conta de corrente da versão ESP32 (o Pico também é 3,3 V), e o mesmo aviso:
 **nunca ligue o LED direto no pino**, sempre com resistor.
@@ -309,17 +326,65 @@ intercambiáveis entre si. Para trocar, basta mudar `PINO_LED_IR` no topo do ske
    **Não** instale a `IRremoteESP8266` para esta placa; veja a seção seguinte.
 5. Serial Monitor em **115200 baud**.
 
-### Gravando a primeira vez
+### Gravando: o modo de gravação (BOOTSEL)
 
-O Pico não aparece como porta serial enquanto não tiver um sketch rodando. Na primeira vez:
+Para gravar, o RP2040 precisa estar em **modo de gravação** — nele o USB deixa de ser porta
+serial e vira um pendrive chamado **RPI-RP2**, e a IDE escreve o `.uf2` direto nesse volume.
+A IDE tenta entrar nesse modo sozinha, e quando consegue é só clicar em *Carregar*.
 
-1. Segure o botão **BOOTSEL** da placa.
-2. Sem soltar, aperte e solte o **RESET**.
-3. Solte o BOOTSEL. Um pendrive chamado **RPI-RP2** monta no Mac.
-4. Clique em *Carregar* na IDE — ela grava direto nesse volume.
+Quando ela **não** consegue, o erro é sempre este:
 
-Da segunda vez em diante a IDE reinicia a placa sozinha e é só clicar em *Carregar*.
-Se um dia ela travar e sumir a porta, repita o BOOTSEL + RESET.
+```
+Resetting /dev/cu.usbmodem21301
+Scanning for RP2040 devices
+No drive to deploy.
+Failed uploading: uploading error: exit status 1
+```
+
+Traduzindo: ela mandou a placa reiniciar em modo de gravação, a placa não foi, e não havia
+volume para escrever.
+
+**O jeito que funciona — energizar com o BOOTSEL apertado:**
+
+1. **Desplugue o cabo USB.**
+2. Segure o **BOOTSEL** — o único botão do módulo do Pico, colado no micro-USB *dele*.
+   Não é o Botão A, nem o B, nem o RESET da BitDogLab.
+3. **Plugue o USB** com o botão ainda apertado.
+4. Conte até três e solte. O volume **RPI-RP2** monta.
+5. Clique em *Carregar*. O volume fica montado indefinidamente, não há pressa.
+
+A variante mais divulgada — segurar BOOTSEL, apertar e soltar RESET, soltar BOOTSEL — **é
+mais frágil**, e aqui falhou várias vezes seguidas. O RP2040 lê o BOOTSEL no instante exato
+em que sai do reset, então soltar o botão cedo demais faz o chip acordar em modo normal. Na
+energização essa janela não existe: o botão já está pressionado quando o chip liga.
+
+**Como saber se é técnica ou defeito.** O sintoma de BOOTSEL que não pega é a porta serial
+sumir e voltar (o RESET funcionou), sem nenhum disco aparecer. Se quiser descartar cabo ruim
+ou placa reiniciando sozinha, observe a porta com a placa **em repouso**, sem tocar nela:
+
+```sh
+for i in $(seq 1 30); do
+  ls /dev/cu.usbmodem* >/dev/null 2>&1 && echo "[${i}s] porta" || echo "[${i}s] SUMIU"
+  sleep 1
+done
+```
+
+Trinta linhas iguais = placa estável, e o problema é só a janela do BOOTSEL. Se ela oscilar
+sozinha, aí sim o assunto é alimentação, cabo ou firmware.
+
+**Como saber que gravou**, sem depender da mensagem da IDE: o volume `RPI-RP2` desmonta
+sozinho e a porta serial volta poucos segundos depois. Volume não desmonta por conta
+própria — se desmontou, é porque alguém escreveu nele.
+
+**Feche o Serial Monitor antes de gravar.** Ele segura a porta (`lsof /dev/cu.usbmodem*`
+mostra o processo `serial-mo`), e o reset automático da IDE depende de abrir e fechar essa
+porta a 1200 bps. A IDE 2.x costuma fechar o monitor sozinha, mas com o Pico no macOS ela
+escorrega.
+
+**Plano B: arrastar o `.uf2` no Finder.** Em *Sketch → Exportar binário compilado*, a IDE
+grava o `.uf2` em `raspiberrypi/build/`. Com o `RPI-RP2` montado, arraste o arquivo para o
+volume. É o mesmo que a IDE faz, com a vantagem de não ter pressa — o
+`Scanning for RP2040 devices` dela tem uma janela curta e desiste rápido.
 
 ## Passo a passo
 
@@ -343,14 +408,43 @@ celular** — vale toda a explicação da versão ESP32 acima.
 
 ### Fase 2 — O controle (`raspiberrypi/raspiberrypi.ino`)
 
-Idêntico ao da Wemos: **Botão A** sozinho aumenta, **Botão B** sozinho diminui, **os dois
-juntos** ligam/desligam, e o teclado do Serial Monitor faz tudo (`P A D V O SL SM SF`).
-Toda a lógica de botões — agir ao soltar, os 30 ms de anti-repique, o combo que só dispara
-uma vez — é a mesma, e está explicada na seção da Wemos.
+São **quatro** botões, e o teclado do Serial Monitor continua fazendo tudo
+(`P A D V O SL SM SF`).
+
+| Botão | Onde | Ação |
+|---|---|---|
+| **B** — o da **direita** | na placa | aumenta 1 °C |
+| **A** — o da **esquerda** | na placa | diminui 1 °C |
+| **A + B juntos** | na placa | liga / desliga |
+| `GP16` | protoboard | velocidade em ciclo: `low → med → fast → low` |
+| `GP19` | protoboard | liga / desliga a oscilação |
+
+Os dois da placa mantêm a lógica da Wemos — agir ao soltar, 30 ms de anti-repique, o combo
+que só dispara uma vez — explicada na seção dela.
+
+Os dois externos são diferentes de propósito: **agem no aperto, não ao soltar**. Aquela
+lógica de agir ao soltar existe só por causa do combo, e como estes não formam combo com
+ninguém, esperar o dedo sair só atrasaria a resposta. É o flanco que dispara, então segurar
+o botão manda um comando só, não uma rajada.
+
+O **visor é o único comando que sobrou exclusivo do teclado** (tecla `V`), e a razão está na
+última seção: nesse protocolo ele é um *toggle*, não um estado.
+
+O OLED agora mostra tudo que tem botão:
+
+```
+LIGADO
+────────────────────
+    24 C
+────────────────────
+VEL MED      OSC ON
+```
+
+Sem esse rodapé os dois botões novos não dariam retorno nenhum com a placa fora do PC — que
+é exatamente a situação para a qual eles existem.
 
 Gravado o sketch, desplugue o USB e ligue a bateria: daí em diante é um controle remoto de
-verdade, com os dois botões e o display. Os comandos de visor, oscilação e velocidade
-continuam existindo só pelo teclado, então para mexer neles é preciso plugar no PC.
+verdade, e só o visor pede o PC.
 
 ---
 
