@@ -12,6 +12,12 @@ temperatura, e o teclado do Serial Monitor para tudo.
 | Botão `IO25` **ou** tecla `A` | aumenta 1 °C |
 | Botão `IO17` **ou** tecla `D` | diminui 1 °C |
 | **Os dois botões juntos** **ou** tecla `P` | liga / desliga |
+| Tecla `V` | liga / desliga o visor do aparelho |
+| Tecla `O` | liga / desliga a oscilação das aletas |
+| Teclas `SL` / `SM` / `SF` | ventilador baixo / médio / alto |
+
+Os botões físicos cobrem só temperatura e liga/desliga — visor, oscilação e
+velocidade são exclusivos do teclado.
 
 **Protocolo: `ELECTRA_AC`** — o Elgin Inverter 9000 responde ao protocolo da Electra
 (a Elgin reetiqueta essa plataforma). Descoberto por tentativa, já que não havia receptor
@@ -33,7 +39,7 @@ IR para capturar os códigos do controle original.
 ## Montagem
 
 ```
-   D1 R32 (ESP32)                         Protoboard
+   Wemos D1 R32 (ESP32)                      Protoboard
 ┌────────────────────┐
 │  SCL (GPIO22) ─────┼───────────────────────► OLED  SCL
 │  SDA (GPIO21) ─────┼───────────────────────► OLED  SDA
@@ -123,8 +129,9 @@ funcionar melhor (filtro IR mais fraco).
 
 ### Fase 2 — O controle (`control/control.ino`)
 
-Grave o sketch e abra o Serial Monitor a **115200 baud**. Tudo pode ser feito pelos
-**botões físicos** ou pelas teclas `P`, `A` e `D` — os dois caminhos são equivalentes.
+Grave o sketch e abra o Serial Monitor a **115200 baud**. Liga/desliga e temperatura
+podem ser feitos pelos **botões físicos** ou pelas teclas `P`, `A` e `D` — os dois caminhos
+são equivalentes. Visor, oscilação e velocidade só existem no teclado.
 
 **Liga/desliga é apertar os dois botões ao mesmo tempo.** São só dois botões: um sozinho
 mexe na temperatura, os dois juntos ligam ou desligam.
@@ -134,20 +141,29 @@ Cada comando faz o aparelho **apitar** — esse apito é a confirmação de que 
 ```
 === Controle Elgin (ELECTRA_AC) ===
 P = liga/desliga | A = aumentar | D = diminuir
+V = visor | O = oscilar
+SL / SM / SF = velocidade baixa / media / alta
 Botoes: um de cada vez = temperatura | os dois = liga/desliga
 OLED: ok
-Estado inicial: DESLIGADO, 24 C
+Estado inicial: DESLIGADO, 24 C, vel low
 
-LIGADO  24 C
-LIGADO  25 C
+LIGADO  24 C  visor on  vel low  oscilar off
+LIGADO  25 C  visor on  vel low  oscilar off
+LIGADO  25 C  visor on  vel fast  oscilar on
 DESLIGADO
 ```
 
-O OLED mostra `LIGADO`/`DESLIGADO` e a temperatura em fonte grande. Se o display não for
-detectado, o sketch avisa no boot e segue funcionando normalmente só pelo Serial.
+**Velocidade é o único comando de duas letras:** `S` sozinho não faz nada, ele só avisa
+que a próxima letra (`L`, `M` ou `F`) escolhe a velocidade. Qualquer outra letra depois do
+`S` descarta o comando com um aviso.
+
+O OLED mostra `LIGADO`/`DESLIGADO` e a temperatura em fonte grande — visor, oscilação e
+velocidade aparecem só no Serial. Se o display não for detectado, o sketch avisa no boot e
+segue funcionando normalmente só pelo Serial.
 
 Deixe a caixa de envio do Serial Monitor em **"Sem final de linha"**. Nas outras opções a
-IDE manda um `\n` junto, mas o sketch ignora qualquer caractere que não seja P, A ou D.
+IDE manda um `\n` junto — e esse `\n` seria lido como a segunda letra de um `S`, cancelando
+o comando de velocidade. Fora isso, o sketch ignora qualquer caractere que não reconheça.
 
 Os botões são lidos a cada 30 ms, o que já elimina o repique dos contatos. A temperatura
 muda **ao soltar** o botão, não ao apertar: como é impossível apertar os dois exatamente no
@@ -157,8 +173,9 @@ chegar e formar o combo. Segurar apertado manda um comando só, não uma rajada.
 Se um botão disparar sozinho, é mau contato na protoboard ou os dois fios caíram no mesmo
 par interno do botão (veja a nota sobre as 4 pernas, acima).
 
-Fixos no código: modo **COOL** e ventilador **automático** — para mudar, ajuste
-`ac.next.mode` e `ac.next.fanspeed` dentro de `enviar()`.
+O modo é fixo em **COOL** — para mudar, ajuste `ac.next.mode` dentro de `enviar()`.
+Estado inicial: desligado, 24 °C, ventilador **baixo**, visor **ligado**, oscilação
+**desligada**.
 
 ---
 
@@ -185,4 +202,4 @@ que acredita ter enviado, exatamente como o controle original. Se alguém deslig
 outro meio, os dois ficam dessincronizados; basta apertar `P` duas vezes para realinhar.
 
 O estado também não é salvo: ao reiniciar a placa, o controle volta a achar que o aparelho
-está desligado a 24 °C.
+está desligado a 24 °C, com ventilador baixo, visor ligado e oscilação desligada.
