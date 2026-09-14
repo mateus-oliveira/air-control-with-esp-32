@@ -1,7 +1,7 @@
 /*
  * Controle remoto — Elgin Inverter 9000 BTUs  |  versão BitDogLab (RP2040)
  *
- * Mesmo controle do sketch control/control.ino (Wemos D1 R32), portado para a
+ * Mesmo controle do sketch esp32/esp32.ino (Wemos D1 R32), portado para a
  * placa BitDogLab da Embarcatech, que tem Raspberry Pi Pico W, dois botões e
  * o display OLED já embutidos. Com a bateria da placa, vira um controle de
  * verdade — sem PC.

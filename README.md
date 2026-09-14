@@ -4,7 +4,7 @@ Controle infravermelho substituto para um ar-condicionado Elgin Inverter cujo co
 original quebrou. Feito com uma **Wemos D1 R32 (ESP32)**, o **LED infravermelho resgatado
 do controle original** e um display **OLED SSD1306**.
 
-O sketch final é [`control/control.ino`](control/control.ino): dois botões físicos para a
+O sketch final é [`esp32/esp32.ino`](esp32/esp32.ino): dois botões físicos para a
 temperatura, e o teclado do Serial Monitor para tudo.
 
 | Comando | Ação |
@@ -127,7 +127,7 @@ O LED IR é invisível a olho nu. Aponte a câmera do celular para a ponta dele:
 enxerga infravermelho e mostra um lampejo branco-arroxeado. A câmera **frontal** costuma
 funcionar melhor (filtro IR mais fraco).
 
-### Fase 2 — O controle (`control/control.ino`)
+### Fase 2 — O controle (`esp32/esp32.ino`)
 
 Grave o sketch e abra o Serial Monitor a **115200 baud**. Liga/desliga e temperatura
 podem ser feitos pelos **botões físicos** ou pelas teclas `P`, `A` e `D` — os dois caminhos
