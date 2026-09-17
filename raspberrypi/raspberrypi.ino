@@ -75,7 +75,7 @@ bool ligado = false;
 // para um único quadro.
 bool visor = true;
 bool pulsarVisor = false;
-bool oscilando = false;
+bool oscilando = true;
 int temperatura = 19;
 
 // A Electra codifica a velocidade nesses três bits; guardar o valor já no
