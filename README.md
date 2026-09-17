@@ -218,7 +218,7 @@ Embarcatech. A diferença que importa: a BitDogLab já traz os **dois botões**,
 **OLED** e uma **bateria**, então o controle deixa de depender da protoboard e do PC.
 Só o LED IR é fio solto.
 
-Os dois sketches convivem no repositório e são equivalentes: `control/` é a Wemos D1 R32,
+Os dois sketches convivem no repositório e são equivalentes: `esp32/` é a Wemos D1 R32,
 `raspberrypi/` é a BitDogLab.
 
 ## O que muda no hardware
@@ -232,11 +232,12 @@ Os dois sketches convivem no repositório e são equivalentes: `control/` é a W
 | Alimentação | USB do PC | bateria da placa |
 | Botão velocidade | não existia | `GP16` (na protoboard) |
 | Botão oscilação | não existia | `GP19` (na protoboard) |
+| Botão visor | não existia | clique do **joystick** = `GP22` (já na placa) |
 
-As duas últimas linhas são **novas**, não têm equivalente na Wemos: os dois botões que lá
+As três últimas linhas são **novas**, não têm equivalente na Wemos: os dois botões que lá
 faziam temperatura e liga/desliga foram reaproveitados aqui para outra coisa, já que a
-BitDogLab traz os seus próprios. Com quatro botões, o controle deixa de depender do teclado
-para tudo menos o visor.
+BitDogLab traz os seus próprios — e o clique do joystick, que ela também já tem, virou o
+visor. Com cinco botões, o controle não depende mais do teclado para nada.
 
 Os botões continuam sem resistor: na BitDogLab eles já estão ligados entre o GPIO e o GND,
 exatamente o arranjo que o `INPUT_PULLUP` do firmware espera.
@@ -421,6 +422,7 @@ São **quatro** botões, e o teclado do Serial Monitor continua fazendo tudo
 | **A + B juntos** | na placa | liga / desliga |
 | `GP16` | protoboard | velocidade em ciclo: `low → med → fast → low` |
 | `GP19` | protoboard | liga / desliga a oscilação |
+| **botão do joystick** = `GP22` | na placa | liga / desliga o visor do aparelho |
 
 Os dois da placa mantêm a lógica da Wemos — agir ao soltar, 30 ms de anti-repique, o combo
 que só dispara uma vez — explicada na seção dela.
@@ -430,24 +432,28 @@ lógica de agir ao soltar existe só por causa do combo, e como estes não forma
 ninguém, esperar o dedo sair só atrasaria a resposta. É o flanco que dispara, então segurar
 o botão manda um comando só, não uma rajada.
 
-O **visor é o único comando que sobrou exclusivo do teclado** (tecla `V`), e a razão está na
-última seção: nesse protocolo ele é um *toggle*, não um estado.
+O **joystick** entra como botão: apertar o manche para baixo fecha um contato no `GP22`, que
+o firmware lê como qualquer outro botão. Os dois eixos de direção (`GP26` e `GP27`) são
+analógicos e este sketch não os lê — só o clique.
 
-O OLED agora mostra tudo que tem botão:
+**Nenhum comando depende mais do teclado.** Os oito comandos do Serial Monitor continuam
+existindo, mas agora são atalhos, não a única via.
+
+O OLED mostra tudo que tem botão:
 
 ```
-LIGADO
-────────────────────
+LIGADO                VIS ON
+────────────────────────────
     24 C
-────────────────────
-VEL MED      OSC ON
+────────────────────────────
+VEL MED          OSC ON
 ```
 
-Sem esse rodapé os dois botões novos não dariam retorno nenhum com a placa fora do PC — que
-é exatamente a situação para a qual eles existem.
+Sem esses dois cantos os botões não dariam retorno nenhum com a placa fora do PC — que é
+exatamente a situação para a qual eles existem.
 
 Gravado o sketch, desplugue o USB e ligue a bateria: daí em diante é um controle remoto de
-verdade, e só o visor pede o PC.
+verdade, sem PC nenhum.
 
 ---
 
@@ -482,11 +488,26 @@ acumula, e receptores IR toleram folga muito maior que isso.
 
 ### Uma pegadinha do protocolo: o visor é *toggle*
 
-No `ELECTRA_AC` o campo do visor não é um estado ("ligado"/"desligado"), é um **toggle**:
-o aparelho inverte o visor toda vez que recebe um quadro com esse campo em `0x15`. Como o
-firmware manda o estado inteiro a cada comando, com `visor` começando em `true`, **qualquer**
-comando (mudar temperatura, ligar, trocar velocidade) também alterna o visor do aparelho.
+No `ELECTRA_AC` o campo do visor não é um estado ("ligado"/"desligado"), é um **pedido de
+alternância**: o aparelho inverte o visor toda vez que recebe um quadro com esse campo em
+`0x15`. Todos os outros campos são estado; só esse não é.
 
-Isso vem da versão ESP32 e foi mantido igual de propósito, para as duas placas se comportarem
-do mesmo jeito. Se incomodar, o conserto é mandar `0x15` só no comando `V` e `0x08` em todos
-os outros — ou seja, tratar `visor` como um pulso, não como um estado.
+A versão ESP32 ([`esp32/esp32.ino`](esp32/esp32.ino)) ainda trata o visor como estado, e por
+isso manda `0x15` em **todo** quadro — o efeito colateral é que qualquer comando (mudar
+temperatura, ligar, trocar velocidade) também alterna o visor do aparelho.
+
+**A versão do Raspberry corrige isso**, e teve de corrigir: sem a correção, um botão dedicado
+ao visor não faria sentido, porque todos os outros botões mexeriam nele também. São duas
+variáveis:
+
+| Variável | Papel |
+|---|---|
+| `visor` | o que **acreditamos** que o aparelho está mostrando; é o que vai para o OLED |
+| `pulsarVisor` | o **pedido** de alternância, que vale para um único quadro e se apaga sozinho |
+
+Só o comando do visor (botão do joystick ou tecla `V`) levanta `pulsarVisor`; o `enviar()`
+o zera logo depois de transmitir. Todos os outros quadros saem com `0x08` e não encostam no
+visor do aparelho.
+
+Como não há receptor, `visor` continua sendo uma crença, não uma leitura — igual ao resto do
+estado. Se alguém mexer no visor por outro meio, é só apertar o botão duas vezes.
