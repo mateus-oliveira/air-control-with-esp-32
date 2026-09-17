@@ -25,6 +25,9 @@
  *   GP16                     velocidade do vento, em ciclo: low > med > fast > low
  *   GP19                     liga / desliga a oscilacao das aletas
  *
+ * BOTÃO DO JOYSTICK (o de apertar, ja na placa):
+ *   GP22                     liga / desliga o visor do aparelho
+ *
  * Placa: Raspberry Pi Pico W (core "Raspberry Pi Pico/RP2040" do Philhower)
  * Bibliotecas: Adafruit SSD1306, Adafruit GFX
  *
@@ -56,6 +59,7 @@ const int PINO_BTN_MAIS = 6;    // Botão B da placa, o da DIREITA
 const int PINO_BTN_MENOS = 5;   // Botão A da placa, o da ESQUERDA
 const int PINO_BTN_VEL = 16;    // botão externo: velocidade do vento
 const int PINO_BTN_OSC = 19;    // botão externo: oscilação das aletas
+const int PINO_BTN_VISOR = 22;  // botão do joystick da placa (o de apertar)
 const uint8_t ENDERECO_OLED = 0x3C;
 const int TEMP_MIN = 16;
 const int TEMP_MAX = 32;
@@ -64,9 +68,15 @@ Adafruit_SSD1306 display(128, 64, &Wire1, -1);
 bool temDisplay = false;
 
 bool ligado = false;
+// O visor é o único campo do protocolo que NÃO é estado, e sim um pedido de
+// alternância: o aparelho inverte o visor sempre que recebe um quadro com esse
+// campo em VISOR_ON. Por isso são duas variáveis. "visor" é só o que
+// acreditamos que o aparelho está mostrando; "pulsarVisor" é o pedido, e vale
+// para um único quadro.
 bool visor = true;
-bool oscilando = false;
-int temperatura = 24;
+bool pulsarVisor = false;
+bool oscilando = true;
+int temperatura = 19;
 
 // A Electra codifica a velocidade nesses três bits; guardar o valor já no
 // formato do protocolo evita uma tabela de conversão.
@@ -87,6 +97,7 @@ bool menosAntes = false;
 bool comboJaDisparou = false;
 bool velAntes = false;
 bool oscAntes = false;
+bool visorAntes = false;
 uint32_t ultimaLeitura = 0;
 
 /* ------------------------------------------------------------------------
@@ -100,6 +111,7 @@ uint32_t ultimaLeitura = 0;
 
 // Definidas mais abaixo, junto da parte de interface; enviar() precisa delas.
 void atualizarTela();
+void alternarVisor();
 const char* nomeVelocidade();
 const char* nomeVelocidadeCurto();
 
@@ -178,7 +190,7 @@ void enviar() {
   quadro[4] = velocidade << 5;   // bits 5-7
   quadro[6] = MODO_COOL << 5;    // bits 5-7
   quadro[9] = ligado ? (1 << 5) : 0;
-  quadro[11] = visor ? VISOR_ON : VISOR_OFF;
+  quadro[11] = pulsarVisor ? VISOR_ON : VISOR_OFF;
 
   // Byte 12: checksum = soma dos 12 primeiros bytes, truncada em 8 bits.
   uint8_t soma = 0;
@@ -186,6 +198,7 @@ void enviar() {
   quadro[12] = soma;
 
   enviarQuadro(quadro);
+  pulsarVisor = false;  // o pedido vale só para o quadro que acabou de sair
   atualizarTela();
 
   if (ligado) {
@@ -210,6 +223,13 @@ void atualizarTela() {
   display.setTextSize(1);
   display.setCursor(0, 0);
   display.print(ligado ? "LIGADO" : "DESLIGADO");
+
+  // Canto direito da primeira linha: "DESLIGADO" termina em 54 px e "VIS OFF"
+  // ocupa 42 px a partir de 80, entao os dois nunca se encostam.
+  display.setCursor(80, 0);
+  display.print("VIS ");
+  display.print(visor ? "ON" : "OFF");
+
   display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
 
   if (ligado) {
@@ -277,6 +297,13 @@ void mudarVelocidade(uint8_t nova) {
   enviar();
 }
 
+// Pede ao aparelho que inverta o visor, e atualiza nossa crença sobre ele.
+void alternarVisor() {
+  visor = !visor;
+  pulsarVisor = true;
+  enviar();
+}
+
 // Avança a velocidade em ciclo: low -> medium -> fast -> low.
 void proximaVelocidade() {
   switch (velocidade) {
@@ -329,6 +356,7 @@ void lerBotoes() {
   // Como é o flanco que dispara, segurar o botão manda um comando só.
   bool btnVel = (digitalRead(PINO_BTN_VEL) == LOW);
   bool btnOsc = (digitalRead(PINO_BTN_OSC) == LOW);
+  bool btnVisor = (digitalRead(PINO_BTN_VISOR) == LOW);
 
   if (btnVel && !velAntes) proximaVelocidade();
 
@@ -337,8 +365,11 @@ void lerBotoes() {
     enviar();
   }
 
+  if (btnVisor && !visorAntes) alternarVisor();
+
   velAntes = btnVel;
   oscAntes = btnOsc;
+  visorAntes = btnVisor;
 }
 
 void setup() {
@@ -349,6 +380,7 @@ void setup() {
   pinMode(PINO_BTN_MENOS, INPUT_PULLUP);
   pinMode(PINO_BTN_VEL, INPUT_PULLUP);
   pinMode(PINO_BTN_OSC, INPUT_PULLUP);
+  pinMode(PINO_BTN_VISOR, INPUT_PULLUP);
 
   analogWriteFreq(38000);   // portadora do IR
   analogWriteRange(255);
@@ -367,6 +399,7 @@ void setup() {
   Serial.println("SL / SM / SF = velocidade baixa / media / alta");
   Serial.println("Botoes da placa: direita = +1 C | esquerda = -1 C | os dois = liga/desliga");
   Serial.println("Botoes externos: GP16 = velocidade | GP19 = oscilacao");
+  Serial.println("Botao do joystick (GP22): visor do aparelho");
   Serial.printf("OLED: %s\n", temDisplay ? "ok" : "nao encontrado (segue sem ele)");
   Serial.printf("Estado inicial: DESLIGADO, %d C, vel %s\n\n", temperatura,
                 nomeVelocidade());
@@ -420,8 +453,7 @@ void loop() {
 
     case 'v':
     case 'V':
-      visor = !visor;
-      enviar();
+      alternarVisor();
       break;
 
     case 'o':
