@@ -76,7 +76,7 @@ bool ligado = false;
 bool visor = true;
 bool pulsarVisor = false;
 bool oscilando = false;
-int temperatura = 24;
+int temperatura = 19;
 
 // A Electra codifica a velocidade nesses três bits; guardar o valor já no
 // formato do protocolo evita uma tabela de conversão.
